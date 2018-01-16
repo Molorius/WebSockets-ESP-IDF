@@ -6,13 +6,9 @@
 #include "freertos/queue.h"
 #include <string.h>
 
-// #include "esp_log.h"
-// const static char* TAG = "websocket_server";
-
 static SemaphoreHandle_t xwebsocket_mutex; // to lock the client array
 static QueueHandle_t xwebsocket_queue; // to hold the clients that send messages
 static ws_client_t clients[WEBSOCKET_SERVER_MAX_CLIENTS]; // holds list of clients
-static uint8_t xwebsocket_len; // number of connected clients
 static TaskHandle_t xtask; // the task itself
 
 static void background_callback(struct netconn* conn, enum netconn_evt evt,u16_t len) {
@@ -30,11 +26,9 @@ static void handle_read(uint8_t num) {
   char* msg;
 
   header.received = 0;
-  //ESP_LOGI(TAG,"actually about to read message...");
   msg = ws_read(&clients[num],&header);
-  //ESP_LOGI(TAG,"Got message: %s",msg);
   if(!header.received) return NULL;
-  //ESP_LOGI(TAG,"read message, sending out");
+
   switch(clients[num].last_opcode) {
     case WEBSOCKET_OPCODE_CONT:
       break;
@@ -69,7 +63,6 @@ static void ws_server_task(void* pvParameters) {
 
   xwebsocket_mutex = xSemaphoreCreateMutex();
   xwebsocket_queue = xQueueCreate(WEBSOCKET_SERVER_QUEUE_SIZE, sizeof(struct netconn*));
-  xwebsocket_len = 0;
 
   // initialize all clients
   for(int i=0;i<WEBSOCKET_SERVER_MAX_CLIENTS;i++) {
@@ -83,24 +76,18 @@ static void ws_server_task(void* pvParameters) {
     clients[i].scallback = NULL;
   }
 
-  //ESP_LOGI(TAG,"task started");
-
   for(;;) {
     xQueueReceive(xwebsocket_queue,&conn,portMAX_DELAY);
-    //ESP_LOGI(TAG,"got something from a client! handling");
-    if(!conn) continue;
-    //ESP_LOGI(TAG,"about to grab mutex");
+    if(!conn) continue; // if the connection was NULL, ignore it
+
     xSemaphoreTake(xwebsocket_mutex,portMAX_DELAY); // take access
-    //ESP_LOGI(TAG,"got mutex");
     for(int i=0;i<WEBSOCKET_SERVER_MAX_CLIENTS;i++) {
       if(clients[i].conn == conn) {
-        //ESP_LOGI(TAG,"client %i is connected and sent message, handling read",i);
         handle_read(i);
         break;
       }
     }
     xSemaphoreGive(xwebsocket_mutex); // return access
-    //ESP_LOGI(TAG,"finished handling");
   }
   vTaskDelete(NULL);
 }
@@ -139,7 +126,6 @@ static bool prepare_response(char* buf,uint32_t buflen,char* handshake) {
                         "Upgrade: websocket\r\n" \
                         "Connection: Upgrade\r\n" \
                         "Sec-WebSocket-Accept: %s\r\n\r\n";
-  //const uint8_t WS_KEY_LEN = 19;
 
   char* key_start;
   char* key_end;
@@ -155,7 +141,6 @@ static bool prepare_response(char* buf,uint32_t buflen,char* handshake) {
 
   hashed_key = ws_hash_handshake(key_start,key_end-key_start);
   if(!hashed_key) return 0;
-  //ESP_LOGI(TAG,"handshake: %s",hashed_key);
   sprintf(handshake,WS_RSP,hashed_key);
   return 1;
 }
@@ -171,10 +156,6 @@ int ws_server_add_client(struct netconn* conn,
   int ret;
   char handshake[256];
 
-  //struct netbuf* inbuf;
-  //char* buf;
-  //uint16_t buflen;
-
   if(!prepare_response(msg,len,handshake)) {
     netconn_close(conn);
     netconn_delete(conn);
@@ -186,16 +167,7 @@ int ws_server_add_client(struct netconn* conn,
   xSemaphoreTake(xwebsocket_mutex,portMAX_DELAY);
   conn->callback = background_callback;
   netconn_write(conn,handshake,strlen(handshake),NETCONN_COPY);
-  //////ESP_LOGI(TAG,"wrote handshake, reading any response...");
-  //netconn_recv(conn,&inbuf);
-  //netbuf_data(inbuf,(void**)&buf,&buflen);
-  ////ESP_LOGI(TAG,"read %s",buf);
 
-  //ret = -1;
-  //vTaskDelay(1); // wait for the message to completely send
-  //ESP_LOGI(TAG,"adding client, grabbing mutex...");
-  //xSemaphoreTake(xwebsocket_mutex,portMAX_DELAY);
-  //ESP_LOGI(TAG,"got mutex");
   for(int i=0;i<WEBSOCKET_SERVER_MAX_CLIENTS;i++) {
     if(clients[i].conn) continue;
     callback(i,WEBSOCKET_CONNECT,NULL,0);
@@ -205,17 +177,14 @@ int ws_server_add_client(struct netconn* conn,
       ws_disconnect_client(&clients[i]);
       break;
     }
-    //clients[i].scallback(i,WEBSOCKET_CONNECT,NULL,0);
     ret = i;
     break;
   }
   xSemaphoreGive(xwebsocket_mutex);
-  //ESP_LOGI(TAG,"added client number %i",ret);
   return ret;
 }
 
 int ws_server_len_url(char* url) {
-  //int len = strlen(url);
   int ret;
   ret = 0;
   xSemaphoreTake(xwebsocket_mutex,portMAX_DELAY);
@@ -327,9 +296,8 @@ int ws_server_send_text_all(char* msg,uint64_t len) {
   return ret;
 }
 
-
-
-/////////////////////
+// the following functions should be used inside of the callback. The regular versions
+// grab the mutex, but it is already grabbed from inside the callback so it will hang.
 
 int ws_server_send_text_client_from_callback(int num,char* msg,uint64_t len) {
   int ret = 0;
