@@ -246,52 +246,25 @@ int ws_server_remove_all() {
   return ret;
 }
 
+// The following functions are already written below, but without the mutex.
+
 int ws_server_send_text_client(int num,char* msg,uint64_t len) {
-  int ret = 0;
   xSemaphoreTake(xwebsocket_mutex,portMAX_DELAY);
-  if(ws_is_connected(clients[num])) {
-    ws_send(&clients[num],WEBSOCKET_OPCODE_TEXT,msg,len,0);
-    ret = 1;
-    if(!ws_is_connected(clients[num])) {
-      clients[num].scallback(num,WEBSOCKET_DISCONNECT_ERROR,NULL,0);
-      ws_disconnect_client(&clients[num]);
-      ret = 0;
-    }
-  }
+  int ret = ws_server_send_text_client_from_callback(num, msg, len);
   xSemaphoreGive(xwebsocket_mutex);
   return ret;
 }
 
 int ws_server_send_text_clients(char* url,char* msg,uint64_t len) {
-  int ret = 0;
   xSemaphoreTake(xwebsocket_mutex,portMAX_DELAY);
-  for(int i=0;i<WEBSOCKET_SERVER_MAX_CLIENTS;i++) {
-    if(ws_is_connected(clients[i]) && strcmp(clients[i].url,url)) {
-      ws_send(&clients[i],WEBSOCKET_OPCODE_TEXT,msg,len,0);
-      if(ws_is_connected(clients[i])) ret += 1;
-      else {
-        clients[i].scallback(i,WEBSOCKET_DISCONNECT_ERROR,NULL,0);
-        ws_disconnect_client(&clients[i]);
-      }
-    }
-  }
+  int ret = ws_server_send_text_clients_from_callback(url, msg, len);
   xSemaphoreGive(xwebsocket_mutex);
   return ret;
 }
 
 int ws_server_send_text_all(char* msg,uint64_t len) {
-  int ret = 0;
   xSemaphoreTake(xwebsocket_mutex,portMAX_DELAY);
-  for(int i=0;i<WEBSOCKET_SERVER_MAX_CLIENTS;i++) {
-    if(ws_is_connected(clients[i])) {
-      ws_send(&clients[i],WEBSOCKET_OPCODE_TEXT,msg,len,0);
-      if(ws_is_connected(clients[i])) ret += 1;
-      else {
-        clients[i].scallback(i,WEBSOCKET_DISCONNECT_ERROR,NULL,0);
-        ws_disconnect_client(&clients[i]);
-      }
-    }
-  }
+  int ret = ws_server_send_text_all_from_callback(msg, len);
   xSemaphoreGive(xwebsocket_mutex);
   return ret;
 }
