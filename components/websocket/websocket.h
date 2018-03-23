@@ -58,6 +58,7 @@ typedef struct {
 typedef struct {
   struct netconn* conn; // the connection
   char* url;            // the associated url,  null terminated
+  char* protocol;		// the associated protocol, null terminated
   bool ping;            // did we send a ping?
   WEBSOCKET_OPCODES_t last_opcode; // the previous opcode, except a continuation frame
   char* contin;         // any continuation piece
